@@ -25,7 +25,7 @@ export default class IntegrationController {
         lastSyncTimestamp: integration.lastSyncTimestamp
       },
       stats
-    }, 'Integration status retrieved successfully')
+    })
   }
 
   static async remove(req, res) {

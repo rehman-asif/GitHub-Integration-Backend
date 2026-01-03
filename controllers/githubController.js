@@ -25,26 +25,22 @@ export default class GitHubController {
   static async fetchAllPages(fetchFn, perPage = 100) {
     const allItems = []
     let page = 1
-    let hasMore = true
 
-    while (hasMore) {
+    while (true) {
       const items = await fetchFn(page, perPage)
-      if (items.length === 0) {
-        hasMore = false
-      } else {
-        allItems.push(...items)
-        hasMore = items.length === perPage
-        page++
-      }
+      if (items.length === 0) break
+      allItems.push(...items)
+      if (items.length < perPage) break
+      page++
     }
 
     return allItems
   }
 
   static async bulkUpsert(Model, docs, uniqueField) {
-    if (!docs.length) return []
+    if (docs.length === 0) return []
 
-    const ops = docs.map(doc => ({
+    const operations = docs.map(doc => ({
       updateOne: {
         filter: { [uniqueField]: doc[uniqueField] },
         update: { $set: { ...doc, syncedAt: new Date() } },
@@ -52,91 +48,91 @@ export default class GitHubController {
       }
     }))
 
-    await Model.bulkWrite(ops)
+    await Model.bulkWrite(operations)
     return docs
   }
 
   static async fetchOrganizations() {
-    const api = await GitHubController.getApiClient()
+    const api = await this.getApiClient()
     const orgs = await api.getOrganizations()
-    const documents = orgs.map(org => ({ ...org, syncedAt: new Date() }))
-    await GitHubController.bulkUpsert(GithubOrganization, documents, 'id')
-    return documents
+    const docs = orgs.map(org => ({ ...org, syncedAt: new Date() }))
+    await this.bulkUpsert(GithubOrganization, docs, 'id')
+    return docs
   }
 
   static async fetchRepos(orgName) {
-    const api = await GitHubController.getApiClient()
+    const api = await this.getApiClient()
     const repos = await api.getOrganizationRepos(orgName)
-    const documents = repos.map(repo => ({ ...repo, syncedAt: new Date() }))
-    await GitHubController.bulkUpsert(GithubRepo, documents, 'id')
-    return documents
+    const docs = repos.map(repo => ({ ...repo, syncedAt: new Date() }))
+    await this.bulkUpsert(GithubRepo, docs, 'id')
+    return docs
   }
 
   static async fetchCommits(owner, repoName) {
-    const api = await GitHubController.getApiClient()
-    const allCommits = await GitHubController.fetchAllPages((page, perPage) =>
+    const api = await this.getApiClient()
+    const commits = await this.fetchAllPages((page, perPage) =>
       api.getRepoCommits(owner, repoName, page, perPage)
     )
 
-    const documents = allCommits.map(commit => ({
+    const docs = commits.map(commit => ({
       ...commit,
       repo: repoName,
       repo_full_name: `${owner}/${repoName}`,
       syncedAt: new Date()
     }))
 
-    await GitHubController.bulkUpsert(GithubCommit, documents, 'sha')
-    return documents
+    await this.bulkUpsert(GithubCommit, docs, 'sha')
+    return docs
   }
 
   static async fetchPulls(owner, repoName) {
-    const api = await GitHubController.getApiClient()
-    const allPulls = await GitHubController.fetchAllPages((page, perPage) =>
+    const api = await this.getApiClient()
+    const pulls = await this.fetchAllPages((page, perPage) =>
       api.getRepoPulls(owner, repoName, page, perPage)
     )
 
-    const documents = allPulls.map(pull => ({
+    const docs = pulls.map(pull => ({
       ...pull,
       repo: repoName,
       repo_full_name: `${owner}/${repoName}`,
       syncedAt: new Date()
     }))
 
-    await GitHubController.bulkUpsert(GithubPull, documents, 'id')
-    return documents
+    await this.bulkUpsert(GithubPull, docs, 'id')
+    return docs
   }
 
   static async fetchIssues(owner, repoName) {
-    const api = await GitHubController.getApiClient()
-    const allIssues = await GitHubController.fetchAllPages((page, perPage) =>
+    const api = await this.getApiClient()
+    const issues = await this.fetchAllPages((page, perPage) =>
       api.getRepoIssues(owner, repoName, page, perPage)
     )
 
-    const documents = allIssues.map(issue => ({
+    const docs = issues.map(issue => ({
       ...issue,
       repo: repoName,
       repo_full_name: `${owner}/${repoName}`,
       syncedAt: new Date()
     }))
 
-    await GitHubController.bulkUpsert(GithubIssue, documents, 'id')
+    await this.bulkUpsert(GithubIssue, docs, 'id')
 
-    for (const issue of allIssues) {
+    for (const issue of issues) {
       if (issue.number) {
-        await GitHubController.fetchChangelogs(owner, repoName, issue.number)
+        await this.fetchChangelogs(owner, repoName, issue.number)
       }
     }
 
-    return documents
+    return docs
   }
 
   static async fetchChangelogs(owner, repoName, issueNumber) {
-    const api = await GitHubController.getApiClient()
-    const allEvents = await GitHubController.fetchAllPages((page, perPage) =>
+    const api = await this.getApiClient()
+    const events = await this.fetchAllPages((page, perPage) =>
       api.getIssueEvents(owner, repoName, issueNumber, page, perPage)
     )
 
-    const documents = allEvents.map(event => ({
+    const docs = events.map(event => ({
       ...event,
       repo: repoName,
       repo_full_name: `${owner}/${repoName}`,
@@ -144,24 +140,24 @@ export default class GitHubController {
       syncedAt: new Date()
     }))
 
-    await GitHubController.bulkUpsert(GithubChangelog, documents, 'id')
-    return documents
+    await this.bulkUpsert(GithubChangelog, docs, 'id')
+    return docs
   }
 
   static async fetchUsers(orgName) {
-    const api = await GitHubController.getApiClient()
-    const allMembers = await GitHubController.fetchAllPages((page, perPage) =>
+    const api = await this.getApiClient()
+    const members = await this.fetchAllPages((page, perPage) =>
       api.getOrganizationMembers(orgName, page, perPage)
     )
 
-    const documents = allMembers.map(member => ({
+    const docs = members.map(member => ({
       ...member,
       organization: orgName,
       syncedAt: new Date()
     }))
 
-    await GitHubController.bulkUpsert(GithubUser, documents, 'id')
-    return documents
+    await this.bulkUpsert(GithubUser, docs, 'id')
+    return docs
   }
 
   static async resyncAllData() {
@@ -175,15 +171,13 @@ export default class GitHubController {
       users: 0
     }
 
-    const orgs = await GitHubController.fetchOrganizations()
+    const orgs = await this.fetchOrganizations()
     results.organizations = orgs.length
 
     for (const org of orgs) {
-      const orgName = org.login
-
       const [repos, users] = await Promise.all([
-        GitHubController.fetchRepos(orgName),
-        GitHubController.fetchUsers(orgName)
+        this.fetchRepos(org.login),
+        this.fetchUsers(org.login)
       ])
 
       results.repos += repos.length
@@ -193,9 +187,9 @@ export default class GitHubController {
         const [owner, repoName] = repo.full_name.split('/')
 
         const [commits, pulls, issues] = await Promise.all([
-          GitHubController.fetchCommits(owner, repoName),
-          GitHubController.fetchPulls(owner, repoName),
-          GitHubController.fetchIssues(owner, repoName)
+          this.fetchCommits(owner, repoName),
+          this.fetchPulls(owner, repoName),
+          this.fetchIssues(owner, repoName)
         ])
 
         results.commits += commits.length

@@ -29,10 +29,9 @@ const searchFields = {
 
 export default class DataRouteController {
   static buildOptions(query) {
-    const page = Number(query.page) || 1
-    const limit = Number(query.limit) || 10
+    const page = parseInt(query.page) || 1
+    const limit = parseInt(query.limit) || 10
     const skip = (page - 1) * limit
-
     const sortField = query.sort_by || 'createdAt'
     const sortOrder = query.sort_order === 'asc' ? 1 : -1
 
@@ -86,10 +85,10 @@ export default class DataRouteController {
       throw new Error('Collection not found')
     }
 
-    const options = DataRouteController.buildOptions(req.query)
-    const filter = DataRouteController.buildFilter(req.query)
+    const options = this.buildOptions(req.query)
+    const filter = this.buildFilter(req.query)
     const fields = searchFields[collection] || []
-    const search = DataRouteController.buildSearchFilter(req.query.search, fields)
+    const search = this.buildSearchFilter(req.query.search, fields)
 
     const query = { ...filter, ...search }
 
@@ -100,14 +99,13 @@ export default class DataRouteController {
       .lean()
 
     const total = await Model.countDocuments(query)
-    const result = DataRouteController.formatResponse(data, total, options.page, options.limit)
+    const result = this.formatResponse(data, total, options.page, options.limit)
 
     return Response.paginated(res, result.data, result.pagination)
   }
 
   static async search(req, res) {
     const keyword = req.query.q
-
     if (!keyword) {
       throw new Error('Search query missing')
     }
@@ -117,13 +115,12 @@ export default class DataRouteController {
     for (const collection in models) {
       const Model = models[collection]
       const fields = searchFields[collection]
-
       if (!fields) continue
 
-      const searchQuery = DataRouteController.buildSearchFilter(keyword, fields)
+      const searchQuery = this.buildSearchFilter(keyword, fields)
       const data = await Model.find(searchQuery).limit(10).lean()
 
-      if (data.length) {
+      if (data.length > 0) {
         result[collection] = data
       }
     }
