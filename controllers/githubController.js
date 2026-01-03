@@ -1,5 +1,4 @@
-import { getApiClient, fetchAllPages } from '../services/apiService.js'
-import DatabaseService from '../services/databaseService.js'
+import GitHubAPI from '../helpers/githubApi.js'
 import GithubOrganization from '../models/GithubOrganization.js'
 import GithubRepo from '../models/GithubRepo.js'
 import GithubCommit from '../models/GithubCommit.js'
@@ -9,26 +8,73 @@ import GithubChangelog from '../models/GithubChangelog.js'
 import GithubUser from '../models/GithubUser.js'
 import GithubIntegration from '../models/GithubIntegration.js'
 
+let apiClient = null
+
 export default class GitHubController {
+  static async getApiClient() {
+    if (!apiClient) {
+      const integration = await GithubIntegration.findOne({ integrationStatus: 'active' })
+      if (!integration) {
+        throw new Error('No active GitHub integration found')
+      }
+      apiClient = new GitHubAPI(integration.oauthToken)
+    }
+    return apiClient
+  }
+
+  static async fetchAllPages(fetchFn, perPage = 100) {
+    const allItems = []
+    let page = 1
+    let hasMore = true
+
+    while (hasMore) {
+      const items = await fetchFn(page, perPage)
+      if (items.length === 0) {
+        hasMore = false
+      } else {
+        allItems.push(...items)
+        hasMore = items.length === perPage
+        page++
+      }
+    }
+
+    return allItems
+  }
+
+  static async bulkUpsert(Model, docs, uniqueField) {
+    if (!docs.length) return []
+
+    const ops = docs.map(doc => ({
+      updateOne: {
+        filter: { [uniqueField]: doc[uniqueField] },
+        update: { $set: { ...doc, syncedAt: new Date() } },
+        upsert: true
+      }
+    }))
+
+    await Model.bulkWrite(ops)
+    return docs
+  }
+
   static async fetchOrganizations() {
-    const api = await getApiClient()
+    const api = await GitHubController.getApiClient()
     const orgs = await api.getOrganizations()
     const documents = orgs.map(org => ({ ...org, syncedAt: new Date() }))
-    await DatabaseService.bulkUpsert(GithubOrganization, documents, 'id')
+    await GitHubController.bulkUpsert(GithubOrganization, documents, 'id')
     return documents
   }
 
   static async fetchRepos(orgName) {
-    const api = await getApiClient()
+    const api = await GitHubController.getApiClient()
     const repos = await api.getOrganizationRepos(orgName)
     const documents = repos.map(repo => ({ ...repo, syncedAt: new Date() }))
-    await DatabaseService.bulkUpsert(GithubRepo, documents, 'id')
+    await GitHubController.bulkUpsert(GithubRepo, documents, 'id')
     return documents
   }
 
   static async fetchCommits(owner, repoName) {
-    const api = await getApiClient()
-    const allCommits = await fetchAllPages((page, perPage) =>
+    const api = await GitHubController.getApiClient()
+    const allCommits = await GitHubController.fetchAllPages((page, perPage) =>
       api.getRepoCommits(owner, repoName, page, perPage)
     )
 
@@ -39,13 +85,13 @@ export default class GitHubController {
       syncedAt: new Date()
     }))
 
-    await DatabaseService.bulkUpsert(GithubCommit, documents, 'sha')
+    await GitHubController.bulkUpsert(GithubCommit, documents, 'sha')
     return documents
   }
 
   static async fetchPulls(owner, repoName) {
-    const api = await getApiClient()
-    const allPulls = await fetchAllPages((page, perPage) =>
+    const api = await GitHubController.getApiClient()
+    const allPulls = await GitHubController.fetchAllPages((page, perPage) =>
       api.getRepoPulls(owner, repoName, page, perPage)
     )
 
@@ -56,13 +102,13 @@ export default class GitHubController {
       syncedAt: new Date()
     }))
 
-    await DatabaseService.bulkUpsert(GithubPull, documents, 'id')
+    await GitHubController.bulkUpsert(GithubPull, documents, 'id')
     return documents
   }
 
   static async fetchIssues(owner, repoName) {
-    const api = await getApiClient()
-    const allIssues = await fetchAllPages((page, perPage) =>
+    const api = await GitHubController.getApiClient()
+    const allIssues = await GitHubController.fetchAllPages((page, perPage) =>
       api.getRepoIssues(owner, repoName, page, perPage)
     )
 
@@ -73,7 +119,7 @@ export default class GitHubController {
       syncedAt: new Date()
     }))
 
-    await DatabaseService.bulkUpsert(GithubIssue, documents, 'id')
+    await GitHubController.bulkUpsert(GithubIssue, documents, 'id')
 
     for (const issue of allIssues) {
       if (issue.number) {
@@ -85,8 +131,8 @@ export default class GitHubController {
   }
 
   static async fetchChangelogs(owner, repoName, issueNumber) {
-    const api = await getApiClient()
-    const allEvents = await fetchAllPages((page, perPage) =>
+    const api = await GitHubController.getApiClient()
+    const allEvents = await GitHubController.fetchAllPages((page, perPage) =>
       api.getIssueEvents(owner, repoName, issueNumber, page, perPage)
     )
 
@@ -98,13 +144,13 @@ export default class GitHubController {
       syncedAt: new Date()
     }))
 
-    await DatabaseService.bulkUpsert(GithubChangelog, documents, 'id')
+    await GitHubController.bulkUpsert(GithubChangelog, documents, 'id')
     return documents
   }
 
   static async fetchUsers(orgName) {
-    const api = await getApiClient()
-    const allMembers = await fetchAllPages((page, perPage) =>
+    const api = await GitHubController.getApiClient()
+    const allMembers = await GitHubController.fetchAllPages((page, perPage) =>
       api.getOrganizationMembers(orgName, page, perPage)
     )
 
@@ -114,7 +160,7 @@ export default class GitHubController {
       syncedAt: new Date()
     }))
 
-    await DatabaseService.bulkUpsert(GithubUser, documents, 'id')
+    await GitHubController.bulkUpsert(GithubUser, documents, 'id')
     return documents
   }
 

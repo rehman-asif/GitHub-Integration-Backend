@@ -1,9 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
-import session from 'express-session'
-import passport from 'passport'
 import cors from 'cors'
-import './config/passport.js'
 import { connectDB } from './config/database.js'
 import config from './config/app.js'
 import authRoutes from './routes/authRoutes.js'
@@ -18,13 +15,6 @@ connectDB()
 app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
-app.use(session({
-  secret: config.session.secret,
-  resave: false,
-  saveUninitialized: false,
-}))
-app.use(passport.initialize())
-app.use(passport.session())
 
 app.use('/auth', authRoutes)
 app.use('/integration', integrationRoutes)
